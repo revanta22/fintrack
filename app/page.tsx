@@ -105,7 +105,7 @@ export default function Dashboard() {
               >
                 {donutData.map((_, i) => <Cell key={i} fill={COLORS[i]} />)}
               </Pie>
-              <Tooltip formatter={(v: number) => fmt(v)} />
+              <Tooltip formatter={(v: unknown) => fmt(v as number)} />
             </PieChart>
           </ResponsiveContainer>
           <div className="flex justify-center gap-5 mt-2 text-xs text-gray-500">
@@ -128,7 +128,7 @@ export default function Dashboard() {
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
               <XAxis dataKey="name" tick={{ fontSize: 11, fill: "#9ca3af" }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fontSize: 11, fill: "#9ca3af" }} axisLine={false} tickLine={false} tickFormatter={fmtM} />
-              <Tooltip formatter={(v: number) => fmt(v)} />
+              <Tooltip formatter={(v: unknown) => fmt(v as number)} />
               <Legend iconType="square" iconSize={10} wrapperStyle={{ fontSize: 12 }} />
               <Bar dataKey="Pemasukan"   fill="#10b981" radius={[4,4,0,0]} />
               <Bar dataKey="Pengeluaran" fill="#f43f5e" radius={[4,4,0,0]} />
