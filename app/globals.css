@@ -1,0 +1,41 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+@import "tailwindcss";
+
+@layer base {
+  * { box-sizing: border-box; }
+  body { @apply bg-gray-50 text-gray-900; }
+}
+
+@layer components {
+  .card {
+    @apply bg-white border border-gray-100 rounded-xl p-5 shadow-sm;
+  }
+  .btn {
+    @apply inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200
+           text-sm font-medium text-gray-700 bg-white hover:bg-gray-50
+           transition-colors cursor-pointer;
+  }
+  .btn-primary {
+    @apply bg-gray-900 text-white border-gray-900 hover:bg-gray-800;
+  }
+  .btn-danger {
+    @apply border-rose-200 text-rose-600 hover:bg-rose-50;
+  }
+  .form-input {
+    @apply w-full text-sm px-3 py-2 rounded-lg border border-gray-200
+           bg-white focus:outline-none focus:border-gray-400 transition-colors;
+  }
+  .form-label {
+    @apply block text-xs text-gray-500 mb-1;
+  }
+  .badge-income {
+    @apply inline-block px-2 py-0.5 rounded text-xs font-medium
+           bg-emerald-50 text-emerald-700;
+  }
+  .badge-expense {
+    @apply inline-block px-2 py-0.5 rounded text-xs font-medium
+           bg-rose-50 text-rose-600;
+  }
+}
