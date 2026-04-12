@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useFinance, fmt } from "@/lib/store";
 import { Asset, ASSET_CATEGORIES } from "@/lib/types";
 import Modal from "@/components/Modal";
-import { Plus, Pencil, Trash2, Landmark } from "lucide-react";
+import { Plus, Pencil, Trash2, Landmark, RefreshCw, Loader2 } from "lucide-react";
+import type { GoldData, GoldEntry } from "@/app/api/gold-price/route";
 
 const blank = (): Omit<Asset, "id"> => ({
   name: "", value: 0, category: ASSET_CATEGORIES[0], notes: "",
@@ -12,23 +13,91 @@ const blank = (): Omit<Asset, "id"> => ({
 
 export default function AssetsPage() {
   const { state: { assets }, dispatch } = useFinance();
-  const [open, setOpen]     = useState(false);
-  const [form, setForm]     = useState<Omit<Asset, "id">>(blank());
-  const [editId, setEditId] = useState<string | null>(null);
+  const [open, setOpen]       = useState(false);
+  const [form, setForm]       = useState<Omit<Asset, "id">>(blank());
+  const [editId, setEditId]   = useState<string | null>(null);
   const [filterCat, setFilterCat] = useState("all");
+
+  // Gold price state
+  const [goldData, setGoldData]     = useState<GoldData | null>(null);
+  const [goldLoading, setGoldLoading] = useState(false);
+  const [goldSource, setGoldSource]   = useState<string>("");
+  const [goldUpdatedAt, setGoldUpdatedAt] = useState<string>("");
+
+  // Gold form state
+  const [isGold, setIsGold]           = useState(false);
+  const [goldVendor, setGoldVendor]   = useState("");
+  const [goldWeight, setGoldWeight]   = useState<number | "">("");
+  const [goldPriceInfo, setGoldPriceInfo] = useState<GoldEntry | null>(null);
+
+  const fetchGoldPrice = async () => {
+    setGoldLoading(true);
+    try {
+      const res  = await fetch("/api/gold-price");
+      const json = await res.json();
+      setGoldData(json.data);
+      setGoldSource(json.source);
+      setGoldUpdatedAt(json.updatedAt);
+    } catch {
+      console.error("Gagal fetch harga emas");
+    } finally {
+      setGoldLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchGoldPrice(); }, []);
+
+  // Auto-calculate gold price when vendor/weight changes
+  useEffect(() => {
+    if (!goldData || !goldVendor || !goldWeight) { setGoldPriceInfo(null); return; }
+    const entries = goldData[goldVendor];
+    if (!entries) { setGoldPriceInfo(null); return; }
+
+    // Find closest weight
+    const exact = entries.find(e => e.weight === goldWeight);
+    if (exact) {
+      setGoldPriceInfo(exact);
+      setForm(f => ({ ...f, value: exact.buyPrice }));
+    } else {
+      // Interpolate: harga per gram × berat
+      const perGram = entries.find(e => e.weight === 1);
+      if (perGram) {
+        const estimated = Math.round(perGram.buyPrice * (goldWeight as number));
+        setGoldPriceInfo({ weight: goldWeight as number, buyPrice: estimated, sellPrice: 0 });
+        setForm(f => ({ ...f, value: estimated }));
+      } else {
+        setGoldPriceInfo(null);
+      }
+    }
+  }, [goldVendor, goldWeight, goldData]);
 
   const filtered = useMemo(() =>
     filterCat === "all" ? assets : assets.filter(a => a.category === filterCat),
   [assets, filterCat]);
 
   const total = assets.reduce((s, a) => s + a.value, 0);
+  const goldTotal = assets.filter(a => a.category === "Emas").reduce((s, a) => s + a.value, 0);
 
-  function openNew() { setEditId(null); setForm(blank()); setOpen(true); }
+  function openNew() {
+    setEditId(null);
+    setForm(blank());
+    setIsGold(false);
+    setGoldVendor("");
+    setGoldWeight("");
+    setGoldPriceInfo(null);
+    setOpen(true);
+  }
+
   function openEdit(a: Asset) {
     setEditId(a.id);
     setForm({ name: a.name, value: a.value, category: a.category, notes: a.notes ?? "" });
+    setIsGold(a.category === "Emas");
+    setGoldVendor("");
+    setGoldWeight("");
+    setGoldPriceInfo(null);
     setOpen(true);
   }
+
   function save() {
     if (!form.name || !form.value) return;
     if (editId) {
@@ -38,11 +107,11 @@ export default function AssetsPage() {
     }
     setOpen(false);
   }
+
   function del(id: string) {
     if (confirm("Hapus aset ini?")) dispatch({ type: "DELETE_ASSET", payload: id });
   }
 
-  // Category color map
   const catColor: Record<string, string> = {
     "Rekening Bank": "bg-blue-50 text-blue-700",
     "Investasi":     "bg-violet-50 text-violet-700",
@@ -53,18 +122,49 @@ export default function AssetsPage() {
     "Lainnya":       "bg-gray-100 text-gray-500",
   };
 
+  const vendors = goldData ? Object.keys(goldData) : [];
+  const weights = goldData && goldVendor ? goldData[goldVendor]?.map(e => e.weight) ?? [] : [];
+
   return (
     <div>
       <h1 className="text-lg font-semibold text-gray-900">Manajemen Aset</h1>
       <p className="text-sm text-gray-400 mb-6">Pantau dan kelola semua aset kamu</p>
 
-      {/* Total */}
-      <div className="card mb-5 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Landmark size={18} className="text-gray-400" />
-          <span className="text-sm text-gray-500">Total Nilai Aset</span>
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
+        <div className="card flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Landmark size={18} className="text-gray-400" />
+            <span className="text-sm text-gray-500">Total Nilai Aset</span>
+          </div>
+          <span className="text-xl font-semibold text-gray-900">{fmt(total)}</span>
         </div>
-        <span className="text-xl font-semibold text-gray-900">{fmt(total)}</span>
+        <div className="card flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="text-lg">✨</span>
+            <div>
+              <span className="text-sm text-gray-500">Total Aset Emas</span>
+              {goldUpdatedAt && (
+                <p className="text-xs text-gray-400">
+                  Update: {new Date(goldUpdatedAt).toLocaleDateString("id-ID")}
+                  {goldSource === "fallback" && " (data cache)"}
+                </p>
+              )}
+            </div>
+          </div>
+          <div className="text-right">
+            <span className="text-xl font-semibold text-yellow-600">{fmt(goldTotal)}</span>
+            <button
+              onClick={fetchGoldPrice}
+              className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 mt-0.5 ml-auto"
+            >
+              {goldLoading
+                ? <Loader2 size={11} className="animate-spin" />
+                : <RefreshCw size={11} />}
+              Refresh harga
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Toolbar */}
@@ -119,21 +219,70 @@ export default function AssetsPage() {
               onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
           </div>
           <div>
-            <label className="form-label">Nilai (Rp)</label>
+            <label className="form-label">Kategori</label>
+            <select className="form-input" value={form.category}
+              onChange={e => {
+                const cat = e.target.value;
+                setIsGold(cat === "Emas");
+                setForm(f => ({ ...f, category: cat }));
+                setGoldVendor(""); setGoldWeight(""); setGoldPriceInfo(null);
+              }}>
+              {ASSET_CATEGORIES.map(c => <option key={c}>{c}</option>)}
+            </select>
+          </div>
+
+          {/* Gold-specific fields */}
+          {isGold && (
+            <div className="bg-yellow-50 border border-yellow-100 rounded-lg p-3 space-y-3">
+              <p className="text-xs font-medium text-yellow-700 flex items-center gap-1">
+                ✨ Harga Emas Otomatis
+                {goldLoading && <Loader2 size={11} className="animate-spin ml-1" />}
+              </p>
+              <div>
+                <label className="form-label">Merk Emas</label>
+                <select className="form-input" value={goldVendor}
+                  onChange={e => { setGoldVendor(e.target.value); setGoldWeight(""); setGoldPriceInfo(null); }}>
+                  <option value="">-- Pilih Merk --</option>
+                  {vendors.map(v => <option key={v} value={v}>{v}</option>)}
+                </select>
+              </div>
+              {goldVendor && (
+                <div>
+                  <label className="form-label">Berat (gram)</label>
+                  <select className="form-input" value={goldWeight}
+                    onChange={e => setGoldWeight(parseFloat(e.target.value))}>
+                    <option value="">-- Pilih Berat --</option>
+                    {weights.map(w => <option key={w} value={w}>{w} gram</option>)}
+                  </select>
+                </div>
+              )}
+              {goldPriceInfo && (
+                <div className="bg-white border border-yellow-200 rounded-lg p-2.5 space-y-1">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-gray-500">Harga Jual (beli)</span>
+                    <span className="font-medium text-gray-800">{fmt(goldPriceInfo.buyPrice)}</span>
+                  </div>
+                  {goldPriceInfo.sellPrice > 0 && (
+                    <div className="flex justify-between text-xs">
+                      <span className="text-gray-500">Harga Buyback</span>
+                      <span className="font-medium text-gray-800">{fmt(goldPriceInfo.sellPrice)}</span>
+                    </div>
+                  )}
+                  <p className="text-xs text-yellow-600 mt-1">Nilai aset otomatis diisi dari harga jual</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div>
+            <label className="form-label">Nilai (Rp){isGold && goldPriceInfo ? " — terisi otomatis" : ""}</label>
             <input className="form-input" type="number" placeholder="0"
               value={form.value || ""}
               onChange={e => setForm(f => ({ ...f, value: parseFloat(e.target.value) || 0 }))} />
           </div>
           <div>
-            <label className="form-label">Kategori</label>
-            <select className="form-input" value={form.category}
-              onChange={e => setForm(f => ({ ...f, category: e.target.value }))}>
-              {ASSET_CATEGORIES.map(c => <option key={c}>{c}</option>)}
-            </select>
-          </div>
-          <div>
             <label className="form-label">Catatan (opsional)</label>
-            <input className="form-input" placeholder="Info tambahan"
+            <input className="form-input" placeholder="cth. 10 gram Antam"
               value={form.notes ?? ""}
               onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
           </div>
