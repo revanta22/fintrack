@@ -17,10 +17,11 @@ const blank = (): Omit<Transaction, "id"> => ({
 });
 
 export default function TransactionsPage() {
-  const { state: { transactions }, dispatch } = useFinance();
-  const [open, setOpen]         = useState(false);
-  const [form, setForm]         = useState<Omit<Transaction, "id">>(blank());
-  const [editId, setEditId]     = useState<string | null>(null);
+  const { state: { transactions, loading }, addTx, updateTx, deleteTx } = useFinance();
+  const [open, setOpen]       = useState(false);
+  const [form, setForm]       = useState<Omit<Transaction, "id">>(blank());
+  const [editId, setEditId]   = useState<string | null>(null);
+  const [saving, setSaving]   = useState(false);
   const [filterType, setFilterType]   = useState("all");
   const [filterMonth, setFilterMonth] = useState("all");
 
@@ -50,30 +51,37 @@ export default function TransactionsPage() {
     setOpen(true);
   }
 
-  function save() {
+  async function save() {
     if (!form.description || !form.amount || !form.date) return;
+    setSaving(true);
     if (editId) {
-      dispatch({ type: "UPDATE_TX", payload: { id: editId, ...form } });
+      await updateTx({ id: editId, ...form });
     } else {
-      dispatch({ type: "ADD_TX", payload: { id: "t" + Date.now(), ...form } });
+      await addTx(form);
     }
+    setSaving(false);
     setOpen(false);
   }
 
-  function del(id: string) {
-    if (confirm("Hapus transaksi ini?")) dispatch({ type: "DELETE_TX", payload: id });
+  async function del(id: string) {
+    if (confirm("Hapus transaksi ini?")) await deleteTx(id);
   }
 
   function setType(t: "income" | "expense") {
     setForm(f => ({ ...f, type: t, category: t === "income" ? INCOME_CATEGORIES[0] : EXPENSE_CATEGORIES[0] }));
   }
 
+  if (loading) return (
+    <div className="flex items-center justify-center h-64 text-gray-400 text-sm">
+      Memuat data...
+    </div>
+  );
+
   return (
     <div>
       <h1 className="text-lg font-semibold text-gray-900">Transaksi</h1>
       <p className="text-sm text-gray-400 mb-6">Kelola pemasukan & pengeluaran kamu</p>
 
-      {/* Toolbar */}
       <div className="flex flex-wrap gap-2 mb-4">
         <select className="form-input w-auto" value={filterType} onChange={e => setFilterType(e.target.value)}>
           <option value="all">Semua Tipe</option>
@@ -94,21 +102,18 @@ export default function TransactionsPage() {
         </button>
       </div>
 
-      {/* Table */}
       <div className="card p-0 overflow-hidden">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-gray-100">
               {["Tanggal","Deskripsi","Kategori","Tipe","Jumlah",""].map(h => (
-                <th key={h} className="text-left px-4 py-3 text-xs text-gray-400 font-medium uppercase tracking-wide">
-                  {h}
-                </th>
+                <th key={h} className="text-left px-4 py-3 text-xs text-gray-400 font-medium uppercase tracking-wide">{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
-              <tr><td colSpan={6} className="text-center py-12 text-gray-400 text-sm">Tidak ada transaksi</td></tr>
+              <tr><td colSpan={6} className="text-center py-12 text-gray-400 text-sm">Belum ada transaksi</td></tr>
             ) : filtered.map(t => (
               <tr key={t.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/50 transition-colors">
                 <td className="px-4 py-3 text-gray-400">{t.date}</td>
@@ -134,27 +139,18 @@ export default function TransactionsPage() {
         </table>
       </div>
 
-      {/* Modal */}
       <Modal open={open} onClose={() => setOpen(false)} title={editId ? "Edit Transaksi" : "Tambah Transaksi"}>
-        {/* Type Toggle */}
         <div className="flex rounded-lg border border-gray-200 overflow-hidden mb-4">
           {(["income", "expense"] as const).map(t => (
-            <button
-              key={t}
-              onClick={() => setType(t)}
+            <button key={t} onClick={() => setType(t)}
               className={`flex-1 py-2 text-sm font-medium transition-colors
                 ${form.type === t
-                  ? t === "income"
-                    ? "bg-emerald-50 text-emerald-700"
-                    : "bg-rose-50 text-rose-600"
-                  : "text-gray-500 hover:bg-gray-50"
-                }`}
-            >
+                  ? t === "income" ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-600"
+                  : "text-gray-500 hover:bg-gray-50"}`}>
               {t === "income" ? "Pemasukan" : "Pengeluaran"}
             </button>
           ))}
         </div>
-
         <div className="space-y-3">
           <div>
             <label className="form-label">Deskripsi</label>
@@ -182,10 +178,11 @@ export default function TransactionsPage() {
               onChange={e => setForm(f => ({ ...f, date: e.target.value }))} />
           </div>
         </div>
-
         <div className="flex justify-end gap-2 mt-5">
           <button className="btn" onClick={() => setOpen(false)}>Batal</button>
-          <button className="btn btn-primary" onClick={save}>Simpan</button>
+          <button className="btn btn-primary" onClick={save} disabled={saving}>
+            {saving ? "Menyimpan..." : "Simpan"}
+          </button>
         </div>
       </Modal>
     </div>

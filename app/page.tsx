@@ -11,7 +11,8 @@ import { TrendingUp, TrendingDown, Wallet } from "lucide-react";
 const MONTHS = ["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agu","Sep","Okt","Nov","Des"];
 
 export default function Dashboard() {
-  const { state: { transactions } } = useFinance();
+  const { state } = useFinance();
+  const { transactions, loading } = state;
 
   const now = new Date();
   const thisMonth = now.getMonth();
@@ -53,6 +54,12 @@ export default function Dashboard() {
   const fmtM   = (v: number) => `${(v / 1e6).toFixed(1)}jt`;
   const total  = inc + exp || 1;
 
+  if (loading) return (
+    <div className="flex items-center justify-center h-64 text-gray-400 text-sm">
+      Memuat data...
+    </div>
+  );
+
   return (
     <div>
       <h1 className="text-lg font-semibold text-gray-900">Dashboard</h1>
@@ -92,14 +99,12 @@ export default function Dashboard() {
 
       {/* Charts */}
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-        {/* Donut */}
         <div className="card md:col-span-2">
           <p className="text-sm font-medium text-gray-700 mb-4">Komposisi bulan ini</p>
           <ResponsiveContainer width="100%" height={180}>
             <PieChart>
               <Pie
-                data={donutData}
-                cx="50%" cy="50%"
+                data={donutData} cx="50%" cy="50%"
                 innerRadius={55} outerRadius={80}
                 dataKey="value" paddingAngle={3}
               >
@@ -120,7 +125,6 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Bar */}
         <div className="card md:col-span-3">
           <p className="text-sm font-medium text-gray-700 mb-4">Tren 6 bulan terakhir</p>
           <ResponsiveContainer width="100%" height={200}>

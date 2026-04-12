@@ -12,22 +12,20 @@ const blank = (): Omit<Asset, "id"> => ({
 });
 
 export default function AssetsPage() {
-  const { state: { assets }, dispatch } = useFinance();
+  const { state: { assets, loading }, addAsset, updateAsset, deleteAsset } = useFinance();
   const [open, setOpen]       = useState(false);
   const [form, setForm]       = useState<Omit<Asset, "id">>(blank());
   const [editId, setEditId]   = useState<string | null>(null);
+  const [saving, setSaving]   = useState(false);
   const [filterCat, setFilterCat] = useState("all");
 
-  // Gold price state
-  const [goldData, setGoldData]     = useState<GoldData | null>(null);
-  const [goldLoading, setGoldLoading] = useState(false);
-  const [goldSource, setGoldSource]   = useState<string>("");
+  const [goldData, setGoldData]         = useState<GoldData | null>(null);
+  const [goldLoading, setGoldLoading]   = useState(false);
   const [goldUpdatedAt, setGoldUpdatedAt] = useState<string>("");
-
-  // Gold form state
-  const [isGold, setIsGold]           = useState(false);
-  const [goldVendor, setGoldVendor]   = useState("");
-  const [goldWeight, setGoldWeight]   = useState<number | "">("");
+  const [goldSource, setGoldSource]     = useState<string>("");
+  const [isGold, setIsGold]             = useState(false);
+  const [goldVendor, setGoldVendor]     = useState("");
+  const [goldWeight, setGoldWeight]     = useState<number | "">("");
   const [goldPriceInfo, setGoldPriceInfo] = useState<GoldEntry | null>(null);
 
   const fetchGoldPrice = async () => {
@@ -47,26 +45,20 @@ export default function AssetsPage() {
 
   useEffect(() => { fetchGoldPrice(); }, []);
 
-  // Auto-calculate gold price when vendor/weight changes
   useEffect(() => {
     if (!goldData || !goldVendor || !goldWeight) { setGoldPriceInfo(null); return; }
     const entries = goldData[goldVendor];
     if (!entries) { setGoldPriceInfo(null); return; }
-
-    // Find closest weight
     const exact = entries.find(e => e.weight === goldWeight);
     if (exact) {
       setGoldPriceInfo(exact);
       setForm(f => ({ ...f, value: exact.buyPrice }));
     } else {
-      // Interpolate: harga per gram × berat
       const perGram = entries.find(e => e.weight === 1);
       if (perGram) {
         const estimated = Math.round(perGram.buyPrice * (goldWeight as number));
         setGoldPriceInfo({ weight: goldWeight as number, buyPrice: estimated, sellPrice: 0 });
         setForm(f => ({ ...f, value: estimated }));
-      } else {
-        setGoldPriceInfo(null);
       }
     }
   }, [goldVendor, goldWeight, goldData]);
@@ -75,16 +67,12 @@ export default function AssetsPage() {
     filterCat === "all" ? assets : assets.filter(a => a.category === filterCat),
   [assets, filterCat]);
 
-  const total = assets.reduce((s, a) => s + a.value, 0);
+  const total     = assets.reduce((s, a) => s + a.value, 0);
   const goldTotal = assets.filter(a => a.category === "Emas").reduce((s, a) => s + a.value, 0);
 
   function openNew() {
-    setEditId(null);
-    setForm(blank());
-    setIsGold(false);
-    setGoldVendor("");
-    setGoldWeight("");
-    setGoldPriceInfo(null);
+    setEditId(null); setForm(blank()); setIsGold(false);
+    setGoldVendor(""); setGoldWeight(""); setGoldPriceInfo(null);
     setOpen(true);
   }
 
@@ -92,24 +80,24 @@ export default function AssetsPage() {
     setEditId(a.id);
     setForm({ name: a.name, value: a.value, category: a.category, notes: a.notes ?? "" });
     setIsGold(a.category === "Emas");
-    setGoldVendor("");
-    setGoldWeight("");
-    setGoldPriceInfo(null);
+    setGoldVendor(""); setGoldWeight(""); setGoldPriceInfo(null);
     setOpen(true);
   }
 
-  function save() {
+  async function save() {
     if (!form.name || !form.value) return;
+    setSaving(true);
     if (editId) {
-      dispatch({ type: "UPDATE_ASSET", payload: { id: editId, ...form } });
+      await updateAsset({ id: editId, ...form });
     } else {
-      dispatch({ type: "ADD_ASSET", payload: { id: "a" + Date.now(), ...form } });
+      await addAsset(form);
     }
+    setSaving(false);
     setOpen(false);
   }
 
-  function del(id: string) {
-    if (confirm("Hapus aset ini?")) dispatch({ type: "DELETE_ASSET", payload: id });
+  async function del(id: string) {
+    if (confirm("Hapus aset ini?")) await deleteAsset(id);
   }
 
   const catColor: Record<string, string> = {
@@ -125,12 +113,17 @@ export default function AssetsPage() {
   const vendors = goldData ? Object.keys(goldData) : [];
   const weights = goldData && goldVendor ? goldData[goldVendor]?.map(e => e.weight) ?? [] : [];
 
+  if (loading) return (
+    <div className="flex items-center justify-center h-64 text-gray-400 text-sm">
+      Memuat data...
+    </div>
+  );
+
   return (
     <div>
       <h1 className="text-lg font-semibold text-gray-900">Manajemen Aset</h1>
       <p className="text-sm text-gray-400 mb-6">Pantau dan kelola semua aset kamu</p>
 
-      {/* Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
         <div className="card flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -147,27 +140,22 @@ export default function AssetsPage() {
               {goldUpdatedAt && (
                 <p className="text-xs text-gray-400">
                   Update: {new Date(goldUpdatedAt).toLocaleDateString("id-ID")}
-                  {goldSource === "fallback" && " (data cache)"}
+                  {goldSource === "fallback" && " (cache)"}
                 </p>
               )}
             </div>
           </div>
           <div className="text-right">
             <span className="text-xl font-semibold text-yellow-600">{fmt(goldTotal)}</span>
-            <button
-              onClick={fetchGoldPrice}
-              className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 mt-0.5 ml-auto"
-            >
-              {goldLoading
-                ? <Loader2 size={11} className="animate-spin" />
-                : <RefreshCw size={11} />}
+            <button onClick={fetchGoldPrice}
+              className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 mt-0.5 ml-auto">
+              {goldLoading ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
               Refresh harga
             </button>
           </div>
         </div>
       </div>
 
-      {/* Toolbar */}
       <div className="flex flex-wrap gap-2 mb-4">
         <select className="form-input w-auto" value={filterCat} onChange={e => setFilterCat(e.target.value)}>
           <option value="all">Semua Kategori</option>
@@ -179,7 +167,6 @@ export default function AssetsPage() {
         </button>
       </div>
 
-      {/* Grid */}
       {filtered.length === 0 ? (
         <div className="text-center py-16 text-gray-400 text-sm">Belum ada aset. Tambah aset baru!</div>
       ) : (
@@ -209,7 +196,6 @@ export default function AssetsPage() {
         </div>
       )}
 
-      {/* Modal */}
       <Modal open={open} onClose={() => setOpen(false)} title={editId ? "Edit Aset" : "Tambah Aset"}>
         <div className="space-y-3">
           <div>
@@ -231,7 +217,6 @@ export default function AssetsPage() {
             </select>
           </div>
 
-          {/* Gold-specific fields */}
           {isGold && (
             <div className="bg-yellow-50 border border-yellow-100 rounded-lg p-3 space-y-3">
               <p className="text-xs font-medium text-yellow-700 flex items-center gap-1">
@@ -259,7 +244,7 @@ export default function AssetsPage() {
               {goldPriceInfo && (
                 <div className="bg-white border border-yellow-200 rounded-lg p-2.5 space-y-1">
                   <div className="flex justify-between text-xs">
-                    <span className="text-gray-500">Harga Jual (beli)</span>
+                    <span className="text-gray-500">Harga Jual</span>
                     <span className="font-medium text-gray-800">{fmt(goldPriceInfo.buyPrice)}</span>
                   </div>
                   {goldPriceInfo.sellPrice > 0 && (
@@ -289,7 +274,9 @@ export default function AssetsPage() {
         </div>
         <div className="flex justify-end gap-2 mt-5">
           <button className="btn" onClick={() => setOpen(false)}>Batal</button>
-          <button className="btn btn-primary" onClick={save}>Simpan</button>
+          <button className="btn btn-primary" onClick={save} disabled={saving}>
+            {saving ? "Menyimpan..." : "Simpan"}
+          </button>
         </div>
       </Modal>
     </div>
