@@ -19,13 +19,13 @@ export default function AssetsPage() {
   const [saving, setSaving]   = useState(false);
   const [filterCat, setFilterCat] = useState("all");
 
-  const [goldData, setGoldData]         = useState<GoldData | null>(null);
-  const [goldLoading, setGoldLoading]   = useState(false);
+  const [goldData, setGoldData]           = useState<GoldData | null>(null);
+  const [goldLoading, setGoldLoading]     = useState(false);
   const [goldUpdatedAt, setGoldUpdatedAt] = useState<string>("");
-  const [goldSource, setGoldSource]     = useState<string>("");
-  const [isGold, setIsGold]             = useState(false);
-  const [goldVendor, setGoldVendor]     = useState("");
-  const [goldWeight, setGoldWeight]     = useState<number | "">("");
+  const [goldSource, setGoldSource]       = useState<string>("");
+  const [isGold, setIsGold]               = useState(false);
+  const [goldVendor, setGoldVendor]       = useState("");
+  const [goldWeight, setGoldWeight]       = useState<number | "">("");
   const [goldPriceInfo, setGoldPriceInfo] = useState<GoldEntry | null>(null);
 
   const fetchGoldPrice = async () => {
@@ -49,15 +49,17 @@ export default function AssetsPage() {
     if (!goldData || !goldVendor || !goldWeight) { setGoldPriceInfo(null); return; }
     const entries = goldData[goldVendor];
     if (!entries) { setGoldPriceInfo(null); return; }
+
     const exact = entries.find(e => e.weight === goldWeight);
     if (exact) {
       setGoldPriceInfo(exact);
+      // Pakai sellPrice (buyback) sebagai nilai aset
       setForm(f => ({ ...f, value: exact.sellPrice }));
     } else {
       const perGram = entries.find(e => e.weight === 1);
       if (perGram) {
         const estimated = Math.round(perGram.sellPrice * (goldWeight as number));
-        setGoldPriceInfo({ weight: goldWeight as number, buyPrice: estimated, sellPrice: 0 });
+        setGoldPriceInfo({ weight: goldWeight as number, buyPrice: perGram.buyPrice * (goldWeight as number), sellPrice: estimated });
         setForm(f => ({ ...f, value: estimated }));
       }
     }
@@ -250,7 +252,7 @@ export default function AssetsPage() {
                   {goldPriceInfo.sellPrice > 0 && (
                     <div className="flex justify-between text-xs">
                       <span className="text-gray-500">Harga Buyback</span>
-                      <span className="font-medium text-gray-800">{fmt(goldPriceInfo.sellPrice)}</span>
+                      <span className="font-medium text-emerald-600 font-semibold">{fmt(goldPriceInfo.sellPrice)}</span>
                     </div>
                   )}
                   <p className="text-xs text-yellow-600 mt-1">Nilai aset otomatis diisi dari harga buyback</p>
@@ -260,7 +262,7 @@ export default function AssetsPage() {
           )}
 
           <div>
-            <label className="form-label">Nilai (Rp){isGold && goldPriceInfo ? " — terisi otomatis" : ""}</label>
+            <label className="form-label">Nilai (Rp){isGold && goldPriceInfo ? " — terisi otomatis (buyback)" : ""}</label>
             <input className="form-input" type="number" placeholder="0"
               value={form.value || ""}
               onChange={e => setForm(f => ({ ...f, value: parseFloat(e.target.value) || 0 }))} />
