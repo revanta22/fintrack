@@ -52,11 +52,11 @@ export default function AssetsPage() {
     const exact = entries.find(e => e.weight === goldWeight);
     if (exact) {
       setGoldPriceInfo(exact);
-      setForm(f => ({ ...f, value: exact.buyPrice }));
+      setForm(f => ({ ...f, value: exact.sellPrice }));
     } else {
       const perGram = entries.find(e => e.weight === 1);
       if (perGram) {
-        const estimated = Math.round(perGram.buyPrice * (goldWeight as number));
+        const estimated = Math.round(perGram.sellPrice * (goldWeight as number));
         setGoldPriceInfo({ weight: goldWeight as number, buyPrice: estimated, sellPrice: 0 });
         setForm(f => ({ ...f, value: estimated }));
       }
@@ -253,7 +253,7 @@ export default function AssetsPage() {
                       <span className="font-medium text-gray-800">{fmt(goldPriceInfo.sellPrice)}</span>
                     </div>
                   )}
-                  <p className="text-xs text-yellow-600 mt-1">Nilai aset otomatis diisi dari harga jual</p>
+                  <p className="text-xs text-yellow-600 mt-1">Nilai aset otomatis diisi dari harga buyback</p>
                 </div>
               )}
             </div>
