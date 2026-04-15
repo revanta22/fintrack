@@ -31,7 +31,7 @@ export default function AssetsPage() {
   const fetchGoldPrice = async () => {
     setGoldLoading(true);
     try {
-      const res  = await fetch("/api/gold-price");
+      const res  = await fetch(`/api/gold-price?t=${Date.now()}`, { cache: "no-store" });
       const json = await res.json();
       setGoldData(json.data);
       setGoldSource(json.source);

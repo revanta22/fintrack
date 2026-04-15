@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
-export const revalidate = 3600; // cache 1 jam
+export const dynamic = "force-dynamic"; // matikan cache sepenuhnya
+export const revalidate = 0;
 
 export interface GoldEntry {
   weight: number;
@@ -19,29 +20,16 @@ export async function GET() {
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
       },
-      next: { revalidate: 3600 },
+      cache: "no-store", // paksa fetch baru setiap request
     });
 
     const html = await res.text();
-
-    // Parse vendor blocks
-    const vendorRegex =
-      /Harga\s+([\w\s]+?)\n[\s\S]*?Berat[\s\S]*?Harga Jual[\s\S]*?Harga Buyback([\s\S]*?)(?=Diperbarui|$)/g;
-
-    const rowRegex =
-      /([\d.]+)\s+Rp([\d.,]+)\s+Rp([\d.,]+)/g;
-
     const goldData: GoldData = {};
-    const vendorBlocks = html.split("Diperbarui");
-
-    // Simple text-based parse: split by "Harga [VENDOR]"
     const sections = html.split(/Harga\s+(?=[A-Z])/);
 
     for (const section of sections) {
       const lines = section.trim().split("\n").map(l => l.trim()).filter(Boolean);
       if (!lines.length) continue;
-
-      // First line = vendor name (before any number)
       const vendorLine = lines[0].replace(/[*()]/g, "").trim();
       if (!vendorLine || /^\d/.test(vendorLine) || vendorLine.length > 40) continue;
       if (!vendorLine.match(/^[A-Z\s\d]+$/)) continue;
@@ -52,22 +40,18 @@ export async function GET() {
       for (const line of lines.slice(1)) {
         const match = line.match(/^([\d.]+)\s+Rp([\d,.]+)\s+Rp([\d,.]+)/);
         if (match) {
-          const weight   = parseFloat(match[1]);
-          const buyPrice = parseInt(match[2].replace(/[,.]/g, ""));
+          const weight    = parseFloat(match[1]);
+          const buyPrice  = parseInt(match[2].replace(/[,.]/g, ""));
           const sellPrice = parseInt(match[3].replace(/[,.]/g, ""));
-          if (weight && buyPrice) {
-            entries.push({ weight, buyPrice, sellPrice });
-          }
+          if (weight && buyPrice) entries.push({ weight, buyPrice, sellPrice });
         }
       }
 
-      if (entries.length > 0) {
-        goldData[vendor] = entries;
-      }
+      if (entries.length > 0) goldData[vendor] = entries;
     }
 
-    // Fallback: hardcode latest data if scraping returns empty
     const isEmpty = Object.keys(goldData).length === 0;
+
     const fallback: GoldData = {
       "GALERI 24": [
         { weight: 0.5, buyPrice: 1508000, sellPrice: 1348000 },
@@ -117,12 +101,20 @@ export async function GET() {
       ],
     };
 
-    return NextResponse.json({
-      data: isEmpty ? fallback : goldData,
-      source: isEmpty ? "fallback" : "live",
-      updatedAt: new Date().toISOString(),
-    });
-  } catch (err) {
+    return NextResponse.json(
+      {
+        data: isEmpty ? fallback : goldData,
+        source: isEmpty ? "fallback" : "live",
+        updatedAt: new Date().toISOString(),
+      },
+      {
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate",
+          "Pragma": "no-cache",
+        },
+      }
+    );
+  } catch {
     return NextResponse.json({ error: "Gagal fetch data emas" }, { status: 500 });
   }
 }
