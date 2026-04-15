@@ -8,9 +8,31 @@ import { Plus, Pencil, Trash2 } from "lucide-react";
 
 const MONTHS = ["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agu","Sep","Okt","Nov","Des"];
 
+// Generate label periode "25 Mar – 24 Apr 2026"
+function getPeriodLabel(startY: number, startM: number) {
+  const endM = startM === 11 ? 0 : startM + 1;
+  const endY = startM === 11 ? startY + 1 : startY;
+  return {
+    value: `${startY}-${String(startM).padStart(2, "0")}`,
+    label: `25 ${MONTHS[startM]} – 24 ${MONTHS[endM]} ${endY}`,
+  };
+}
+
+// Cek apakah tanggal masuk periode tertentu (25 startM s/d 24 endM)
+function inPeriod(dateStr: string, periodValue: string) {
+  const [py, pm] = periodValue.split("-").map(Number);
+  const startM = pm, startY = py;
+  const endM   = startM === 11 ? 0 : startM + 1;
+  const endY   = startM === 11 ? startY + 1 : startY;
+
+  const start = new Date(startY, startM, 25);
+  const end   = new Date(endY,   endM,   24, 23, 59, 59);
+  const d     = new Date(dateStr);
+  return d >= start && d <= end;
+}
+
 const blank = (): Omit<Transaction, "id"> => ({
-  type: "income",
-  amount: 0,
+  type: "income", amount: 0,
   category: INCOME_CATEGORIES[0],
   description: "",
   date: new Date().toISOString().split("T")[0],
@@ -18,33 +40,42 @@ const blank = (): Omit<Transaction, "id"> => ({
 
 export default function TransactionsPage() {
   const { state: { transactions, loading }, addTx, updateTx, deleteTx } = useFinance();
-  const [open, setOpen]       = useState(false);
-  const [form, setForm]       = useState<Omit<Transaction, "id">>(blank());
-  const [editId, setEditId]   = useState<string | null>(null);
-  const [saving, setSaving]   = useState(false);
+  const [open, setOpen]     = useState(false);
+  const [form, setForm]     = useState<Omit<Transaction, "id">>(blank());
+  const [editId, setEditId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [filterType, setFilterType]   = useState("all");
-  const [filterMonth, setFilterMonth] = useState("all");
+  const [filterPeriod, setFilterPeriod] = useState("all");
 
-  const months = useMemo(() => {
-    const set = new Set(transactions.map(t => t.date.slice(0, 7)));
-    return [...set].sort().reverse();
+  // Generate daftar periode unik dari transaksi
+  const periods = useMemo(() => {
+    const set = new Set<string>();
+    transactions.forEach(t => {
+      const d = new Date(t.date);
+      const day = d.getDate();
+      const m   = d.getMonth();
+      const y   = d.getFullYear();
+      // Jika tgl >= 25, masuk periode bulan ini; jika < 25 masuk periode bulan lalu
+      const periodM = day >= 25 ? m : (m === 0 ? 11 : m - 1);
+      const periodY = day >= 25 ? y : (m === 0 ? y - 1 : y);
+      set.add(`${periodY}-${String(periodM).padStart(2, "0")}`);
+    });
+    return [...set].sort().reverse().map(v => {
+      const [py, pm] = v.split("-").map(Number);
+      return getPeriodLabel(py, pm);
+    });
   }, [transactions]);
 
   const filtered = useMemo(() => {
     return [...transactions]
       .filter(t => filterType === "all" || t.type === filterType)
-      .filter(t => filterMonth === "all" || t.date.startsWith(filterMonth))
+      .filter(t => filterPeriod === "all" || inPeriod(t.date, filterPeriod))
       .sort((a, b) => b.date.localeCompare(a.date));
-  }, [transactions, filterType, filterMonth]);
+  }, [transactions, filterType, filterPeriod]);
 
   const cats = form.type === "income" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
 
-  function openNew() {
-    setEditId(null);
-    setForm(blank());
-    setOpen(true);
-  }
-
+  function openNew() { setEditId(null); setForm(blank()); setOpen(true); }
   function openEdit(t: Transaction) {
     setEditId(t.id);
     setForm({ type: t.type, amount: t.amount, category: t.category, description: t.description, date: t.date });
@@ -54,11 +85,8 @@ export default function TransactionsPage() {
   async function save() {
     if (!form.description || !form.amount || !form.date) return;
     setSaving(true);
-    if (editId) {
-      await updateTx({ id: editId, ...form });
-    } else {
-      await addTx(form);
-    }
+    if (editId) await updateTx({ id: editId, ...form });
+    else await addTx(form);
     setSaving(false);
     setOpen(false);
   }
@@ -72,9 +100,7 @@ export default function TransactionsPage() {
   }
 
   if (loading) return (
-    <div className="flex items-center justify-center h-64 text-gray-400 text-sm">
-      Memuat data...
-    </div>
+    <div className="flex items-center justify-center h-64 text-gray-400 text-sm">Memuat data...</div>
   );
 
   return (
@@ -88,12 +114,10 @@ export default function TransactionsPage() {
           <option value="income">Pemasukan</option>
           <option value="expense">Pengeluaran</option>
         </select>
-        <select className="form-input w-auto" value={filterMonth} onChange={e => setFilterMonth(e.target.value)}>
-          <option value="all">Semua Bulan</option>
-          {months.map(m => (
-            <option key={m} value={m}>
-              {MONTHS[parseInt(m.slice(5, 7)) - 1]} {m.slice(0, 4)}
-            </option>
+        <select className="form-input w-auto" value={filterPeriod} onChange={e => setFilterPeriod(e.target.value)}>
+          <option value="all">Semua Periode</option>
+          {periods.map(p => (
+            <option key={p.value} value={p.value}>{p.label}</option>
           ))}
         </select>
         <div className="flex-1" />

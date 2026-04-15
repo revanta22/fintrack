@@ -10,41 +10,92 @@ import { TrendingUp, TrendingDown, Wallet } from "lucide-react";
 
 const MONTHS = ["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agu","Sep","Okt","Nov","Des"];
 
+// Periode: tanggal 25 bulan lalu s/d 24 bulan ini
+function getCurrentPeriod() {
+  const now  = new Date();
+  const day  = now.getDate();
+  const m    = now.getMonth();
+  const y    = now.getFullYear();
+
+  let startM: number, startY: number, endM: number, endY: number;
+
+  if (day >= 25) {
+    // Sudah lewat tanggal 25: periode dimulai bulan ini tgl 25
+    startY = y; startM = m;
+    endY   = m === 11 ? y + 1 : y;
+    endM   = m === 11 ? 0 : m + 1;
+  } else {
+    // Sebelum tanggal 25: periode dimulai bulan lalu tgl 25
+    startY = m === 0 ? y - 1 : y;
+    startM = m === 0 ? 11 : m - 1;
+    endY   = y; endM = m;
+  }
+
+  const start = new Date(startY, startM, 25);
+  const end   = new Date(endY,   endM,   24, 23, 59, 59);
+  return { start, end };
+}
+
+// Periode N bulan ke belakang (untuk bar chart)
+function getPeriodRange(offsetFromCurrent: number) {
+  const now = new Date();
+  const day = now.getDate();
+  const m   = now.getMonth();
+  const y   = now.getFullYear();
+
+  // Tentukan "current period start month"
+  let baseM = day >= 25 ? m : (m === 0 ? 11 : m - 1);
+  let baseY = day >= 25 ? y : (m === 0 ? y - 1 : y);
+
+  // Geser offset ke belakang
+  let startM = baseM - offsetFromCurrent;
+  let startY = baseY;
+  while (startM < 0) { startM += 12; startY--; }
+
+  let endM = startM + 1;
+  let endY = startY;
+  if (endM > 11) { endM = 0; endY++; }
+
+  const start = new Date(startY, startM, 25);
+  const end   = new Date(endY,   endM,   24, 23, 59, 59);
+  const label = `${MONTHS[startM]} ${String(startY).slice(2)}–${MONTHS[endM]} ${String(endY).slice(2)}`;
+  const shortLabel = `${MONTHS[startM]}`;
+  return { start, end, label, shortLabel };
+}
+
 export default function Dashboard() {
   const { state } = useFinance();
   const { transactions, loading } = state;
 
-  const now = new Date();
-  const thisMonth = now.getMonth();
-  const thisYear  = now.getFullYear();
+  const { start: pStart, end: pEnd } = getCurrentPeriod();
 
+  // Ringkasan periode saat ini
   const { inc, exp } = useMemo(() => {
     const tx = transactions.filter(t => {
       const d = new Date(t.date);
-      return d.getFullYear() === thisYear && d.getMonth() === thisMonth;
+      return d >= pStart && d <= pEnd;
     });
     return {
       inc: tx.filter(t => t.type === "income").reduce((s, t) => s + t.amount, 0),
       exp: tx.filter(t => t.type === "expense").reduce((s, t) => s + t.amount, 0),
     };
-  }, [transactions, thisMonth, thisYear]);
+  }, [transactions, pStart, pEnd]);
 
+  // Bar chart 6 periode terakhir
   const barData = useMemo(() => {
     return Array.from({ length: 6 }, (_, i) => {
-      const offset = 5 - i;
-      const m  = ((thisMonth - offset) % 12 + 12) % 12;
-      const yr = thisMonth - offset < 0 ? thisYear - 1 : thisYear;
+      const { start, end, shortLabel } = getPeriodRange(5 - i);
       const tx = transactions.filter(t => {
         const d = new Date(t.date);
-        return d.getFullYear() === yr && d.getMonth() === m;
+        return d >= start && d <= end;
       });
       return {
-        name: MONTHS[m],
+        name: shortLabel,
         Pemasukan:   tx.filter(t => t.type === "income").reduce((s, t) => s + t.amount, 0),
         Pengeluaran: tx.filter(t => t.type === "expense").reduce((s, t) => s + t.amount, 0),
       };
     });
-  }, [transactions, thisMonth, thisYear]);
+  }, [transactions]);
 
   const donutData = [
     { name: "Pemasukan",   value: inc },
@@ -53,6 +104,8 @@ export default function Dashboard() {
   const COLORS = ["#10b981", "#f43f5e"];
   const fmtM   = (v: number) => `${(v / 1e6).toFixed(1)}jt`;
   const total  = inc + exp || 1;
+
+  const periodLabel = `${pStart.getDate()} ${MONTHS[pStart.getMonth()]} – ${pEnd.getDate()} ${MONTHS[pEnd.getMonth()]} ${pEnd.getFullYear()}`;
 
   if (loading) return (
     <div className="flex items-center justify-center h-64 text-gray-400 text-sm">
@@ -63,9 +116,7 @@ export default function Dashboard() {
   return (
     <div>
       <h1 className="text-lg font-semibold text-gray-900">Dashboard</h1>
-      <p className="text-sm text-gray-400 mb-6">
-        Ringkasan {MONTHS[thisMonth]} {thisYear}
-      </p>
+      <p className="text-sm text-gray-400 mb-6">Periode {periodLabel}</p>
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
@@ -84,7 +135,7 @@ export default function Dashboard() {
             <span className="text-xs text-gray-400 uppercase tracking-wide">Pemasukan</span>
           </div>
           <p className="text-2xl font-semibold text-emerald-500">{fmt(inc)}</p>
-          <p className="text-xs text-gray-400 mt-1">Bulan ini</p>
+          <p className="text-xs text-gray-400 mt-1">Periode ini</p>
         </div>
 
         <div className="card">
@@ -93,14 +144,14 @@ export default function Dashboard() {
             <span className="text-xs text-gray-400 uppercase tracking-wide">Pengeluaran</span>
           </div>
           <p className="text-2xl font-semibold text-rose-500">{fmt(exp)}</p>
-          <p className="text-xs text-gray-400 mt-1">Bulan ini</p>
+          <p className="text-xs text-gray-400 mt-1">Periode ini</p>
         </div>
       </div>
 
       {/* Charts */}
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
         <div className="card md:col-span-2">
-          <p className="text-sm font-medium text-gray-700 mb-4">Komposisi bulan ini</p>
+          <p className="text-sm font-medium text-gray-700 mb-4">Komposisi periode ini</p>
           <ResponsiveContainer width="100%" height={180}>
             <PieChart>
               <Pie
@@ -126,7 +177,7 @@ export default function Dashboard() {
         </div>
 
         <div className="card md:col-span-3">
-          <p className="text-sm font-medium text-gray-700 mb-4">Tren 6 bulan terakhir</p>
+          <p className="text-sm font-medium text-gray-700 mb-4">Tren 6 periode terakhir</p>
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={barData} barSize={10} barGap={3}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
