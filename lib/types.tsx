@@ -6,7 +6,7 @@ export interface Transaction {
   amount: number;
   category: string;
   description: string;
-  date: string; // YYYY-MM-DD
+  date: string;
 }
 
 export interface Asset {
@@ -15,6 +15,8 @@ export interface Asset {
   value: number;
   category: string;
   notes?: string;
+  gold_vendor?: string;  // merk emas, disimpan permanen
+  gold_weight?: number;  // berat gram, disimpan permanen
 }
 
 export const INCOME_CATEGORIES = [
