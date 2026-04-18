@@ -13,111 +13,123 @@ export interface GoldData {
   [vendor: string]: GoldEntry[];
 }
 
-// Harga per gram dari berbagai sumber
-async function fetchPerGram(): Promise<Record<string, { buy: number; sell: number }>> {
-  const sources = ["pegadaian", "lakuemas", "hargaemas-org"];
-  const results: Record<string, { buy: number; sell: number }> = {};
-
-  await Promise.allSettled(
-    sources.map(async (src) => {
-      try {
-        const res  = await fetch(`https://logam-mulia-api.vercel.app/prices/${src}`, {
-          cache: "no-store",
-          headers: { "User-Agent": "Mozilla/5.0" },
-        });
-        const json = await res.json();
-        if (json?.data?.length) {
-          for (const item of json.data) {
-            const type = (item.type || item.name || "").toUpperCase();
-            if (item.buy && item.sell) {
-              results[type] = { buy: item.buy, sell: item.sell };
-            }
-          }
-        }
-      } catch {}
-    })
-  );
-
-  return results;
-}
-
-// Buat tabel berat dari harga per gram
-function buildWeightTable(pricePerGram: number, sellPerGram: number, weights: number[]): GoldEntry[] {
-  return weights.map(w => ({
-    weight:    w,
-    buyPrice:  Math.round(pricePerGram * w),
-    sellPrice: Math.round(sellPerGram * w),
-  }));
+function parseRp(str: string): number {
+  return parseInt(str.replace(/[Rp.,\s]/g, "")) || 0;
 }
 
 export async function GET() {
   try {
-    const perGram = await fetchPerGram();
+    const res = await fetch("https://galeri24.co.id/harga-emas", {
+      cache: "no-store",
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml",
+        "Accept-Language": "id-ID,id;q=0.9",
+      },
+    });
 
-    // Berat standar yang tersedia
-    const standardWeights  = [0.5, 1, 2, 3, 5, 10, 25, 50, 100];
-    const antamWeights     = [0.5, 1, 2, 3, 5, 10, 25, 50, 100];
-    const ubsWeights       = [0.5, 1, 2, 5, 10, 25, 50, 100, 250, 500];
-
+    const html = await res.text();
     const goldData: GoldData = {};
 
-    // ANTAM
-    const antamSrc = perGram["ANTAM"] || perGram["LM ANTAM"];
-    if (antamSrc) {
-      goldData["ANTAM"] = buildWeightTable(antamSrc.buy, antamSrc.sell, antamWeights);
-    }
+    // Split by "Diperbarui" untuk dapat tiap blok vendor
+    const blocks = html.split(/Diperbarui\s+\w+,\s+\d+\s+\w+\s+\d+/);
 
-    // UBS
-    const ubsSrc = perGram["UBS"];
-    if (ubsSrc) {
-      goldData["UBS"] = buildWeightTable(ubsSrc.buy, ubsSrc.sell, ubsWeights);
-    }
+    for (const block of blocks) {
+      // Cari nama vendor: "Harga ANTAM", "Harga UBS", dst
+      const vendorMatch = block.match(/Harga\s+([A-Z][A-Z0-9 ]+?)(?:\s*-\s*[A-Z][A-Z0-9 ]+?)?\s*\n/);
+      if (!vendorMatch) continue;
 
-    // Galeri24 / Pegadaian
-    const galeriSrc = perGram["GALERI24"] || perGram["GALERI 24"] || perGram["G24"];
-    if (galeriSrc) {
-      goldData["GALERI 24"] = buildWeightTable(galeriSrc.buy, galeriSrc.sell, standardWeights);
+      const vendor = vendorMatch[1].trim();
+      if (!vendor || vendor === "Emas") continue;
+
+      const entries: GoldEntry[] = [];
+
+      // Match baris: angka  Rp...  Rp...
+      const rowRegex = /([\d.]+)\s+Rp([\d.,]+)\s+Rp([\d.,]+)/g;
+      let match;
+
+      while ((match = rowRegex.exec(block)) !== null) {
+        const weight    = parseFloat(match[1]);
+        const buyPrice  = parseRp("Rp" + match[2]);
+        const sellPrice = parseRp("Rp" + match[3]);
+        if (weight > 0 && buyPrice > 0) {
+          entries.push({ weight, buyPrice, sellPrice });
+        }
+      }
+
+      if (entries.length > 0) goldData[vendor] = entries;
     }
 
     const isEmpty = Object.keys(goldData).length === 0;
 
-    // Fallback hardcode jika semua fetch gagal
-    if (isEmpty) {
-      goldData["ANTAM"] = [
-        { weight: 0.5, buyPrice: 1539000, sellPrice: 1347000 },
-        { weight: 1,   buyPrice: 2972000, sellPrice: 2695000 },
-        { weight: 2,   buyPrice: 5881000, sellPrice: 5390000 },
-        { weight: 5,   buyPrice: 14623000, sellPrice: 13476000 },
-        { weight: 10,  buyPrice: 29188000, sellPrice: 26952000 },
-        { weight: 25,  buyPrice: 72839000, sellPrice: 67049000 },
-        { weight: 50,  buyPrice: 145595000, sellPrice: 134099000 },
-        { weight: 100, buyPrice: 291109000, sellPrice: 268199000 },
-      ];
-      goldData["UBS"] = [
-        { weight: 0.5, buyPrice: 1562000, sellPrice: 1347000 },
-        { weight: 1,   buyPrice: 2890000, sellPrice: 2695000 },
-        { weight: 2,   buyPrice: 5734000, sellPrice: 5390000 },
-        { weight: 5,   buyPrice: 14171000, sellPrice: 13476000 },
-        { weight: 10,  buyPrice: 28192000, sellPrice: 26952000 },
-        { weight: 25,  buyPrice: 70342000, sellPrice: 67049000 },
-        { weight: 50,  buyPrice: 140395000, sellPrice: 134099000 },
-        { weight: 100, buyPrice: 280679000, sellPrice: 268199000 },
-      ];
-      goldData["GALERI 24"] = [
-        { weight: 0.5, buyPrice: 1508000, sellPrice: 1348000 },
-        { weight: 1,   buyPrice: 2876000, sellPrice: 2697000 },
-        { weight: 2,   buyPrice: 5683000, sellPrice: 5395000 },
-        { weight: 5,   buyPrice: 14102000, sellPrice: 13489000 },
-        { weight: 10,  buyPrice: 28130000, sellPrice: 26978000 },
-        { weight: 25,  buyPrice: 69944000, sellPrice: 67116000 },
-        { weight: 50,  buyPrice: 139778000, sellPrice: 134233000 },
-        { weight: 100, buyPrice: 279418000, sellPrice: 268467000 },
-      ];
-    }
+    // Fallback dengan data terbaru dari Galeri24 (17 Apr 2026)
+    const fallback: GoldData = {
+      "GALERI 24": [
+        { weight: 0.5,  buyPrice: 1507000,    sellPrice: 1347000    },
+        { weight: 1,    buyPrice: 2873000,    sellPrice: 2694000    },
+        { weight: 2,    buyPrice: 5676000,    sellPrice: 5389000    },
+        { weight: 5,    buyPrice: 14086000,   sellPrice: 13474000   },
+        { weight: 10,   buyPrice: 28098000,   sellPrice: 26948000   },
+        { weight: 25,   buyPrice: 69866000,   sellPrice: 67040000   },
+        { weight: 50,   buyPrice: 139620000,  sellPrice: 134081000  },
+        { weight: 100,  buyPrice: 279101000,  sellPrice: 268162000  },
+        { weight: 250,  buyPrice: 696039000,  sellPrice: 667104000  },
+        { weight: 500,  buyPrice: 1392077000, sellPrice: 1334208000 },
+        { weight: 1000, buyPrice: 2784153000, sellPrice: 2668417000 },
+      ],
+      "ANTAM": [
+        { weight: 0.5, buyPrice: 1544000,  sellPrice: 1346000  },
+        { weight: 1,   buyPrice: 2983000,  sellPrice: 2692000  },
+        { weight: 2,   buyPrice: 5904000,  sellPrice: 5384000  },
+        { weight: 3,   buyPrice: 8829000,  sellPrice: 8076000  },
+        { weight: 5,   buyPrice: 14680000, sellPrice: 13460000 },
+        { weight: 10,  buyPrice: 29302000, sellPrice: 26921000 },
+        { weight: 25,  buyPrice: 73125000, sellPrice: 66973000 },
+        { weight: 50,  buyPrice: 146167000,sellPrice: 133947000},
+        { weight: 100, buyPrice: 292253000,sellPrice: 267894000},
+      ],
+      "UBS": [
+        { weight: 0.5, buyPrice: 1569000,   sellPrice: 1346000   },
+        { weight: 1,   buyPrice: 2902000,   sellPrice: 2692000   },
+        { weight: 2,   buyPrice: 5760000,   sellPrice: 5384000   },
+        { weight: 5,   buyPrice: 14233000,  sellPrice: 13460000  },
+        { weight: 10,  buyPrice: 28316000,  sellPrice: 26921000  },
+        { weight: 25,  buyPrice: 70651000,  sellPrice: 66973000  },
+        { weight: 50,  buyPrice: 141011000, sellPrice: 133947000 },
+        { weight: 100, buyPrice: 281911000, sellPrice: 267894000 },
+        { weight: 250, buyPrice: 704569000, sellPrice: 666437000 },
+        { weight: 500, buyPrice: 1407483000,sellPrice: 1332875000},
+      ],
+      "ANTAM MULIA RETRO": [
+        { weight: 0.5, buyPrice: 1584000,  sellPrice: 1346000  },
+        { weight: 1,   buyPrice: 2944000,  sellPrice: 2692000  },
+        { weight: 2,   buyPrice: 5791000,  sellPrice: 5384000  },
+        { weight: 3,   buyPrice: 8577000,  sellPrice: 8076000  },
+        { weight: 5,   buyPrice: 14378000, sellPrice: 13460000 },
+        { weight: 10,  buyPrice: 28630000, sellPrice: 26921000 },
+        { weight: 25,  buyPrice: 71399000, sellPrice: 66973000 },
+        { weight: 50,  buyPrice: 142726000,sellPrice: 133947000},
+        { weight: 100, buyPrice: 285170000,sellPrice: 267894000},
+      ],
+      "LOTUS ARCHI": [
+        { weight: 1,   buyPrice: 2919000,  sellPrice: 2692000  },
+        { weight: 5,   buyPrice: 14370000, sellPrice: 13460000 },
+        { weight: 10,  buyPrice: 28541000, sellPrice: 26921000 },
+        { weight: 25,  buyPrice: 70964000, sellPrice: 66973000 },
+        { weight: 50,  buyPrice: 141898000,sellPrice: 133947000},
+        { weight: 100, buyPrice: 283615000,sellPrice: 267894000},
+      ],
+      "UBS DISNEY": [
+        { weight: 0.5, buyPrice: 1572000,  sellPrice: 1346000 },
+        { weight: 2,   buyPrice: 5771000,  sellPrice: 5384000 },
+        { weight: 5,   buyPrice: 14192000, sellPrice: 13460000},
+        { weight: 10,  buyPrice: 28189000, sellPrice: 26921000},
+      ],
+    };
 
     return NextResponse.json(
       {
-        data: goldData,
+        data: isEmpty ? fallback : goldData,
         source: isEmpty ? "fallback" : "live",
         updatedAt: new Date().toISOString(),
       },
@@ -129,6 +141,6 @@ export async function GET() {
       }
     );
   } catch {
-    return NextResponse.json({ error: "Gagal fetch data emas" }, { status: 500 });
+    return NextResponse.json({ error: "Gagal fetch" }, { status: 500 });
   }
 }
